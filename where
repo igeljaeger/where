@@ -1,70 +1,79 @@
 #!/bin/bash
 
-# Accept search term as argument or prompt
-if [ -n "$1" ]; then
-  search_term="$1"
+# Accept search terms as arguments or prompt
+if [ $# -gt 0 ]; then
+  search_terms=("$@")
 else
-  read -p "Enter the name of the application to search for: " search_term
+  read -p "Enter application names to search for (space-separated): " -a search_terms
 fi
 
 found=0
 
+# Function to search and display results
+search_packages() {
+  local package_list="$1"
+  local format="$2"
+  local source="$3"
+  
+  echo -e "\033[1m\033[4m\033[34m${source}:\033[0m"
+  
+  for term in "${search_terms[@]}"; do
+    if ! grep -iq "$term" <<< "$package_list"; then
+      continue
+    fi
+    
+    printf "$format" "$package_list" | grep -i --color=always "$term"
+    found=1
+  done
+  
+  echo ""
+}
+
+# Get package lists once
+snap_list=$(snap list 2>/dev/null)
+flatpak_list=$(flatpak list 2>/dev/null)
+
 # Snap packages
-echo -e "\033[1m\033[4m\033[34mSnap packages:\033[0m"
-snap list 2>/dev/null | grep -v Name | awk '{print "  "$1}' | grep -i --color=always "$search_term"
-if [ "${PIPESTATUS[2]}" -eq 0 ]; then
-  found=1
-fi
-echo ""
+search_packages "$snap_list" "  %s\n" "Snap packages"
 
 # Flatpak packages
-echo -e "\033[1m\033[4m\033[34mFlatpak packages:\033[0m"
-flatpak list 2>/dev/null | grep -v Application | awk '{print "  "$1}' | grep -i --color=always "$search_term"
-if [ "${PIPESTATUS[2]}" -eq 0 ]; then
-  found=1
-fi
-echo ""
+search_packages "$flatpak_list" "  %s\n" "Flatpak packages"
 
-# Native packages (auto-detect package manager)
+# Native packages
 echo -e "\033[1m\033[4m\033[34mNative packages:\033[0m"
+native_list=""
 if command -v dpkg &>/dev/null; then
-  # Debian/Ubuntu
-  dpkg -l 2>/dev/null | grep "^ii" | awk '{print "  "$2}' | grep -i --color=always "$search_term"
-  if [ "${PIPESTATUS[2]}" -eq 0 ]; then
-    found=1
-  fi
+  native_list=$(dpkg -l 2>/dev/null | grep "^ii" | awk '{print "  "$2}')
 elif command -v pacman &>/dev/null; then
-  # Arch
-  pacman -Qq 2>/dev/null | awk '{print "  "$1}' | grep -i --color=always "$search_term"
-  if [ "${PIPESTATUS[2]}" -eq 0 ]; then
-    found=1
-  fi
+  native_list=$(pacman -Qq 2>/dev/null | awk '{print "  "$1}')
 elif command -v rpm &>/dev/null; then
-  # Fedora, openSUSE, etc.
-  rpm -qa 2>/dev/null | awk -F'-[0-9]' '{print "  "$1}' | grep -i --color=always "$search_term"
-  if [ "${PIPESTATUS[2]}" -eq 0 ]; then
-    found=1
-  fi
+  native_list=$(rpm -qa 2>/dev/null | awk -F'-[0-9]' '{print "  "$1}')
 elif command -v zypper &>/dev/null; then
-  # openSUSE (zypper)
-  zypper se -i 2>/dev/null | awk 'NR>2 {print "  "$3}' | grep -i --color=always "$search_term"
-  if [ "${PIPESTATUS[2]}" -eq 0 ]; then
-    found=1
-  fi
+  native_list=$(zypper se -i 2>/dev/null | awk 'NR>2 {print "  "$3}')
 else
   echo "  No supported native package manager found."
 fi
+
+for term in "${search_terms[@]}"; do
+  if grep -iq "$term" <<< "$native_list"; then
+    grep -i --color=always "$term" <<< "$native_list"
+    found=1
+  fi
+done
 echo ""
 
 # Local scripts
 echo -e "\033[1m\033[4m\033[34mLocal scripts:\033[0m"
- ls ~/.local/bin/* 2>/dev/null | grep -v Name | awk '{print "  "$1}' | grep -i --color=always "$search_term"
-if [ "${PIPESTATUS[2]}" -eq 0 ]; then
-  found=1
-fi
+script_list=$(ls ~/.local/bin/* 2>/dev/null | awk '{print "  "$1}')
+for term in "${search_terms[@]}"; do
+  if grep -iq "$term" <<< "$script_list"; then
+    grep -i --color=always "$term" <<< "$script_list"
+    found=1
+  fi
+done
 echo ""
 
-# If nothing was found
+# Result summary
 if [ $found -eq 0 ]; then
-  echo -e "\033[1m\033[31mNo results found.\033[0m"
+  echo -e "\033[1m\033[31mNo results found for: ${search_terms[*]}\033[0m"
 fi
