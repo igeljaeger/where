@@ -1,0 +1,70 @@
+#!/bin/bash
+
+# Accept search term as argument or prompt
+if [ -n "$1" ]; then
+  search_term="$1"
+else
+  read -p "Enter the name of the application to search for: " search_term
+fi
+
+found=0
+
+# Snap packages
+echo -e "\033[1m\033[4m\033[34mSnap packages:\033[0m"
+snap list 2>/dev/null | grep -v Name | awk '{print "  "$1}' | grep -i --color=always "$search_term"
+if [ "${PIPESTATUS[2]}" -eq 0 ]; then
+  found=1
+fi
+echo ""
+
+# Flatpak packages
+echo -e "\033[1m\033[4m\033[34mFlatpak packages:\033[0m"
+flatpak list 2>/dev/null | grep -v Application | awk '{print "  "$1}' | grep -i --color=always "$search_term"
+if [ "${PIPESTATUS[2]}" -eq 0 ]; then
+  found=1
+fi
+echo ""
+
+# Native packages (auto-detect package manager)
+echo -e "\033[1m\033[4m\033[34mNative packages:\033[0m"
+if command -v dpkg &>/dev/null; then
+  # Debian/Ubuntu
+  dpkg -l 2>/dev/null | grep "^ii" | awk '{print "  "$2}' | grep -i --color=always "$search_term"
+  if [ "${PIPESTATUS[2]}" -eq 0 ]; then
+    found=1
+  fi
+elif command -v pacman &>/dev/null; then
+  # Arch
+  pacman -Qq 2>/dev/null | awk '{print "  "$1}' | grep -i --color=always "$search_term"
+  if [ "${PIPESTATUS[2]}" -eq 0 ]; then
+    found=1
+  fi
+elif command -v rpm &>/dev/null; then
+  # Fedora, openSUSE, etc.
+  rpm -qa 2>/dev/null | awk -F'-[0-9]' '{print "  "$1}' | grep -i --color=always "$search_term"
+  if [ "${PIPESTATUS[2]}" -eq 0 ]; then
+    found=1
+  fi
+elif command -v zypper &>/dev/null; then
+  # openSUSE (zypper)
+  zypper se -i 2>/dev/null | awk 'NR>2 {print "  "$3}' | grep -i --color=always "$search_term"
+  if [ "${PIPESTATUS[2]}" -eq 0 ]; then
+    found=1
+  fi
+else
+  echo "  No supported native package manager found."
+fi
+echo ""
+
+# Local scripts
+echo -e "\033[1m\033[4m\033[34mLocal scripts:\033[0m"
+ ls ~/.local/bin/* 2>/dev/null | grep -v Name | awk '{print "  "$1}' | grep -i --color=always "$search_term"
+if [ "${PIPESTATUS[2]}" -eq 0 ]; then
+  found=1
+fi
+echo ""
+
+# If nothing was found
+if [ $found -eq 0 ]; then
+  echo -e "\033[1m\033[31mNo results found.\033[0m"
+fi
